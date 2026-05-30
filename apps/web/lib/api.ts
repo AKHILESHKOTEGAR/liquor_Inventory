@@ -39,9 +39,14 @@ export const logout = () =>
   apiClient.delete('/api/auth/logout').catch(() => {});
 
 // Sessions
-export const getSessions = (params?: { status?: string; page?: number; limit?: number; storeId?: string }) => {
+export const getSessions = (params?: { status?: string; page?: number; limit?: number; storeId?: string; dateFrom?: string; dateTo?: string }) => {
   const storeId = params?.storeId ?? getSelectedStoreId();
   return apiClient.get('/api/audit/sessions', { params: { ...params, storeId } });
+};
+
+export const getSessionsCalendar = (month: string, storeId?: string) => {
+  const sid = storeId ?? getSelectedStoreId();
+  return apiClient.get('/api/audit/sessions/calendar', { params: { month, ...(sid ? { storeId: sid } : {}) } });
 };
 
 export const getSession = (id: string) =>
@@ -77,12 +82,18 @@ export const downloadMonthlyReport = (year: number, month: number, storeId?: str
     responseType: 'blob',
   });
 
+// Setup (no auth required)
+export const getSetupStatus = () => apiClient.get('/api/setup/status');
+export const setupSystem = (data: { storeName: string; ownerName: string; pin: string }) =>
+  apiClient.post('/api/setup', data);
+
 // Workers
 export const getWorkers = () => apiClient.get('/api/workers');
+export const getManagers = () => apiClient.get('/api/workers/managers');
 
 export const getWorkerStores = () => apiClient.get('/api/workers/stores');
 
-export const createWorker = (data: { name: string; pin: string; storeId?: string }) =>
+export const createWorker = (data: { name: string; pin: string; storeId?: string; role?: string }) =>
   apiClient.post('/api/workers', data);
 
 export const updateWorker = (id: string, data: { name?: string; pin?: string; isActive?: boolean }) =>

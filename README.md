@@ -313,10 +313,3 @@ EXPO_PUBLIC_API_URL=https://your-api.railway.app
 
 ---
 
-<div align="center">
-
-Built with ❤️ for government compliance and loss prevention.
-
-*Every bottle accounted for. Every session signed.*
-
-</div>

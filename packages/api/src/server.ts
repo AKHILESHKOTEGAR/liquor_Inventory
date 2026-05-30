@@ -16,6 +16,7 @@ import { boxRoutes } from './routes/boxes';
 import { exportRoutes } from './routes/export';
 import { workerRoutes } from './routes/workers';
 import { storeRoutes } from './routes/stores';
+import { setupRoutes } from './routes/setup';
 
 const server = Fastify({
   logger: {
@@ -71,6 +72,7 @@ server.register(boxRoutes, { prefix: '/api/boxes' });
 server.register(exportRoutes, { prefix: '/api/export' });
 server.register(workerRoutes, { prefix: '/api/workers' });
 server.register(storeRoutes, { prefix: '/api/stores' });
+server.register(setupRoutes, { prefix: '/api/setup' });
 
 server.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 

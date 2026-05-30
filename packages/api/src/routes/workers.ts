@@ -12,6 +12,7 @@ const createWorkerSchema = z.object({
   name: z.string().min(2).max(100).trim(),
   pin: z.string().regex(/^\d{4,6}$/, 'PIN must be 4–6 digits'),
   storeId: z.string().min(1).optional(),
+  role: z.enum(['STAFF', 'ADMIN']).default('STAFF'),
 });
 
 const updateWorkerSchema = z.object({
@@ -32,6 +33,63 @@ async function generateEmployeeId(): Promise<string> {
 
 export async function workerRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticate);
+
+  // GET /api/workers/managers — list ADMIN users (OWNER only)
+  fastify.get('/managers', { preHandler: [requireAdmin] }, async (request, reply) => {
+    const payload = request.user as JwtPayload;
+
+    if (payload.role !== 'OWNER') {
+      return reply.status(403).send({ error: 'Only OWNER can view managers' });
+    }
+
+    const accessibleStoreIds = getAccessibleStoreIds(payload);
+
+    const managers = await prisma.user.findMany({
+      where: {
+        role: 'ADMIN',
+        storeId: { in: accessibleStoreIds },
+      },
+      include: {
+        store: { select: { id: true, name: true } },
+        sessions: {
+          where: { status: 'ACTIVE' },
+          take: 1,
+          orderBy: { startedAt: 'desc' },
+          include: { _count: { select: { scanLogs: true } } },
+        },
+      },
+      orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
+    });
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const todayCounts = await prisma.scanLog.groupBy({
+      by: ['scannedBy'],
+      where: {
+        scannedBy: { in: managers.map((m) => m.id) },
+        scannedAt: { gte: todayStart },
+      },
+      _count: { id: true },
+    });
+
+    const countMap = new Map(todayCounts.map((c) => [c.scannedBy, c._count.id]));
+
+    return reply.send({
+      managers: managers.map((m) => ({
+        id: m.id,
+        employeeId: m.employeeId,
+        name: m.name,
+        isActive: m.isActive,
+        storeId: m.storeId,
+        store: m.store,
+        activeSession: m.sessions[0] ?? null,
+        todayScans: countMap.get(m.id) ?? 0,
+        scanning: m.sessions.length > 0,
+        createdAt: m.createdAt,
+      })),
+    });
+  });
 
   // GET /api/workers — list all STAFF for accessible stores, with live session info
   fastify.get('/', { preHandler: [requireAdmin] }, async (request, reply) => {
@@ -85,7 +143,7 @@ export async function workerRoutes(fastify: FastifyInstance) {
     return reply.send({ workers: result });
   });
 
-  // POST /api/workers — create new STAFF worker
+  // POST /api/workers — create STAFF (any admin) or ADMIN manager (OWNER only)
   fastify.post('/', { preHandler: [requireAdmin] }, async (request, reply) => {
     const payload = request.user as JwtPayload;
     const body = createWorkerSchema.safeParse(request.body);
@@ -97,9 +155,13 @@ export async function workerRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const { name, pin, storeId: requestedStore } = body.data;
+    const { name, pin, storeId: requestedStore, role: targetRole } = body.data;
 
-    // Determine target store
+    // Only OWNER can create ADMIN managers
+    if (targetRole === 'ADMIN' && payload.role !== 'OWNER') {
+      return reply.status(403).send({ error: 'Only OWNER can create manager accounts' });
+    }
+
     const accessible = getAccessibleStoreIds(payload);
     let targetStoreId: string;
 
@@ -110,9 +172,9 @@ export async function workerRoutes(fastify: FastifyInstance) {
       }
       targetStoreId = payload.storeId;
     } else {
-      // OWNER must specify storeId
+      // OWNER must specify storeId (for both STAFF and ADMIN)
       if (!requestedStore) {
-        return reply.status(422).send({ error: 'storeId required for OWNER' });
+        return reply.status(422).send({ error: 'storeId required' });
       }
       if (!accessible.includes(requestedStore)) {
         return reply.status(403).send({ error: 'Store not in your access scope' });
@@ -128,19 +190,19 @@ export async function workerRoutes(fastify: FastifyInstance) {
         employeeId,
         name,
         pin: hashedPin,
-        role: 'STAFF',
+        role: targetRole,
         storeId: targetStoreId,
         isActive: true,
       },
       include: { store: { select: { id: true, name: true } } },
     });
 
-    // Return raw PIN once — caller must relay to worker securely
     return reply.status(201).send({
       worker: {
         id: worker.id,
         employeeId: worker.employeeId,
         name: worker.name,
+        role: worker.role,
         isActive: worker.isActive,
         storeId: worker.storeId,
         store: worker.store,
@@ -148,12 +210,12 @@ export async function workerRoutes(fastify: FastifyInstance) {
       },
       credentials: {
         employeeId: worker.employeeId,
-        pin,   // raw PIN shown ONCE
+        pin,
       },
     });
   });
 
-  // PATCH /api/workers/:id — update name, reset PIN, or toggle active
+  // PATCH /api/workers/:id — update name, reset PIN, or toggle active (OWNER can edit ADMIN too)
   fastify.patch('/:id', { preHandler: [requireAdmin] }, async (request, reply) => {
     const payload = request.user as JwtPayload;
     const { id } = request.params as { id: string };
@@ -169,7 +231,8 @@ export async function workerRoutes(fastify: FastifyInstance) {
     const accessible = getAccessibleStoreIds(payload);
     const worker = await prisma.user.findUnique({ where: { id } });
 
-    if (!worker || worker.role !== 'STAFF') {
+    const isManagingAdmin = payload.role === 'OWNER' && worker?.role === 'ADMIN';
+    if (!worker || (worker.role !== 'STAFF' && !isManagingAdmin)) {
       return reply.status(404).send({ error: 'Worker not found' });
     }
     if (!worker.storeId || !accessible.includes(worker.storeId)) {
@@ -202,7 +265,7 @@ export async function workerRoutes(fastify: FastifyInstance) {
     });
   });
 
-  // PATCH /api/workers/:id/assign — reassign worker to a different store (OWNER only in practice)
+  // PATCH /api/workers/:id/assign — reassign worker to a different store (OWNER only)
   fastify.patch('/:id/assign', { preHandler: [requireAdmin] }, async (request, reply) => {
     const payload = request.user as JwtPayload;
     const { id } = request.params as { id: string };

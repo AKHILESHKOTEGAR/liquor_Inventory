@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getWorkers, getWorkerStores, createWorker, updateWorker, reassignWorker, setWorkerPin } from '@/lib/api';
+import { getWorkers, getManagers, getWorkerStores, createWorker, updateWorker, reassignWorker, setWorkerPin } from '@/lib/api';
 
 interface Store { id: string; name: string }
 interface ActiveSession {
@@ -48,9 +48,9 @@ function CredentialsCard({ creds, onClose }: { creds: Credentials; onClose: () =
   };
 
   return (
-    <Modal title="Worker Created" onClose={onClose}>
+    <Modal title="Account Created" onClose={onClose}>
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
-        <p className="text-amber-800 text-xs font-semibold mb-1">⚠ Show credentials to worker NOW</p>
+        <p className="text-amber-800 text-xs font-semibold mb-1">⚠ Show credentials NOW</p>
         <p className="text-amber-700 text-xs">PIN is hashed after this — it cannot be retrieved again. Reset if lost.</p>
       </div>
       <div className="space-y-3">
@@ -83,7 +83,7 @@ function CredentialsCard({ creds, onClose }: { creds: Credentials; onClose: () =
 }
 
 // ── Set PIN Modal ──────────────────────────────────────────────────────
-function SetPinModal({ worker, onClose, onDone }: { worker: { id: string; name: string }; onClose: () => void; onDone: (creds: Credentials) => void }) {
+function SetPinModal({ worker, onClose, onDone }: { worker: { id: string; name: string }; onClose: () => void; onDone: () => void }) {
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -94,7 +94,7 @@ function SetPinModal({ worker, onClose, onDone }: { worker: { id: string; name: 
     setLoading(true); setError('');
     try {
       await setWorkerPin(worker.id, pin);
-      onDone({ employeeId: '', pin });
+      onDone();
     } catch (e: any) {
       setError(e.response?.data?.error ?? 'Failed to set PIN');
     } finally {
@@ -106,7 +106,7 @@ function SetPinModal({ worker, onClose, onDone }: { worker: { id: string; name: 
     <Modal title={`Set PIN — ${worker.name}`} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-blue-700 text-xs">
-          Enter new PIN for this worker. Share it with them directly.
+          Enter new PIN for this account. Share it with them directly.
         </div>
         <div>
           <label className="block text-slate-600 text-xs font-medium mb-1.5">New PIN (4–6 digits)</label>
@@ -186,7 +186,7 @@ function AddWorkerModal({
           />
         </div>
 
-        {userRole === 'OWNER' && stores.length > 1 && (
+        {userRole === 'OWNER' && stores.length > 0 && (
           <div>
             <label className="block text-slate-600 text-xs font-medium mb-1.5">Assign to Store</label>
             <select
@@ -207,6 +207,84 @@ function AddWorkerModal({
           {loading
             ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating…</>
             : 'Create Worker'}
+        </button>
+      </form>
+    </Modal>
+  );
+}
+
+// ── Add Manager Modal ──────────────────────────────────────────────────
+function AddManagerModal({
+  stores, onClose, onCreated,
+}: {
+  stores: Store[];
+  onClose: () => void; onCreated: (creds: Credentials) => void;
+}) {
+  const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
+  const [storeId, setStoreId] = useState(stores[0]?.id ?? '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{4,6}$/.test(pin)) { setError('PIN must be 4–6 digits'); return; }
+    if (!storeId) { setError('Please select a store'); return; }
+    setLoading(true); setError('');
+    try {
+      const res = await createWorker({ name: name.trim(), pin, storeId, role: 'ADMIN' });
+      onCreated(res.data.credentials);
+    } catch (e: any) {
+      setError(e.response?.data?.error ?? 'Creation failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal title="Add Store Manager" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-purple-700 text-xs">
+          Managers can start audits, view reports, and manage workers at their assigned store.
+        </div>
+
+        <div>
+          <label className="block text-slate-600 text-xs font-medium mb-1.5">Full Name</label>
+          <input
+            value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Suresh Sharma" required minLength={2}
+            className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400"
+          />
+        </div>
+
+        <div>
+          <label className="block text-slate-600 text-xs font-medium mb-1.5">PIN (4–6 digits)</label>
+          <input
+            value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            placeholder="e.g. 5678" required inputMode="numeric"
+            className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono tracking-widest placeholder:text-slate-400 placeholder:tracking-normal"
+          />
+        </div>
+
+        <div>
+          <label className="block text-slate-600 text-xs font-medium mb-1.5">Assign to Store</label>
+          <select
+            value={storeId} onChange={(e) => setStoreId(e.target.value)} required
+            className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+
+        {error && <p className="text-red-600 text-xs bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{error}</p>}
+
+        <button
+          type="submit" disabled={loading}
+          className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2"
+        >
+          {loading
+            ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating…</>
+            : 'Create Manager'}
         </button>
       </form>
     </Modal>
@@ -309,15 +387,16 @@ function EditWorkerModal({
 
 // ── Worker Table Component ─────────────────────────────────────────────
 function WorkerTable({
-  title, workers, stores, userRole, togglingId, onEdit, onSetPin, onToggle, onReassigned, dimmed,
+  title, workers, stores, allowReassign, togglingId, onEdit, onSetPin, onToggle, onReassigned, dimmed, badge,
 }: {
-  title: string; workers: Worker[]; stores: Store[]; userRole: string;
+  title: string; workers: Worker[]; stores: Store[]; allowReassign: boolean;
   togglingId: string | null;
   onEdit: (w: Worker) => void;
   onSetPin: (w: Worker) => void;
   onToggle: (w: Worker) => void;
   onReassigned: () => void;
   dimmed?: boolean;
+  badge?: string;
 }) {
   const [reassigning, setReassigning] = useState<string | null>(null);
 
@@ -336,16 +415,21 @@ function WorkerTable({
   return (
     <div className={`bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm ${dimmed ? 'opacity-60' : ''}`}>
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-        <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
-        <span className="text-xs text-slate-500">{workers.length} worker{workers.length !== 1 ? 's' : ''}</span>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
+          {badge && (
+            <span className="text-xs bg-purple-100 text-purple-700 font-medium px-2 py-0.5 rounded-full">{badge}</span>
+          )}
+        </div>
+        <span className="text-xs text-slate-500">{workers.length} account{workers.length !== 1 ? 's' : ''}</span>
       </div>
 
       {workers.length === 0 ? (
-        <div className="p-10 text-center text-slate-400 text-sm">No workers</div>
+        <div className="p-10 text-center text-slate-400 text-sm">None yet</div>
       ) : (
         <>
           <div className="grid grid-cols-[2fr_1.2fr_1.5fr_1.2fr_1fr_auto] gap-4 px-5 py-2.5 border-b border-slate-100">
-            {['Worker', 'Employee ID', 'Store', 'Session / Scans', "Today's Scans", 'PIN / Actions'].map((h) => (
+            {['Name', 'Employee ID', 'Store', 'Session / Scans', "Today's Scans", 'Actions'].map((h) => (
               <p key={h} className="text-slate-400 text-xs font-semibold uppercase tracking-wider">{h}</p>
             ))}
           </div>
@@ -374,7 +458,7 @@ function WorkerTable({
 
                 {/* Store */}
                 <div>
-                  {userRole === 'OWNER' && stores.length > 1 ? (
+                  {allowReassign && stores.length > 1 ? (
                     <select
                       value={w.storeId ?? ''}
                       disabled={reassigning === w.id}
@@ -404,7 +488,7 @@ function WorkerTable({
                 {/* Today scans */}
                 <p className="text-blue-600 font-bold text-sm">{w.todayScans}</p>
 
-                {/* PIN / Actions */}
+                {/* Actions */}
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => onSetPin(w)}
@@ -457,24 +541,32 @@ function WorkerTable({
 // ── Main Page ──────────────────────────────────────────────────────────
 export default function WorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [managers, setManagers] = useState<Worker[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [userRole, setUserRole] = useState('ADMIN');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const [showAdd, setShowAdd] = useState(false);
+  const [showAddManager, setShowAddManager] = useState(false);
   const [editWorker, setEditWorker] = useState<Worker | null>(null);
   const [setPinWorker, setSetPinWorker] = useState<Worker | null>(null);
   const [pendingCredentials, setPendingCredentials] = useState<Credentials | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const userRoleRef = useRef('ADMIN');
 
   const load = useCallback(async () => {
     try {
-      const [wRes, sRes] = await Promise.all([getWorkers(), getWorkerStores()]);
-      setWorkers(wRes.data.workers);
-      setStores(sRes.data.stores);
+      const isOwner = userRoleRef.current === 'OWNER';
+      const promises: Promise<any>[] = [getWorkers(), getWorkerStores()];
+      if (isOwner) promises.push(getManagers());
+
+      const results = await Promise.all(promises);
+      setWorkers(results[0].data.workers);
+      setStores(results[1].data.stores);
+      if (isOwner && results[2]) setManagers(results[2].data.managers);
     } catch (e: any) {
       setError(e.response?.data?.error ?? 'Failed to load');
     } finally {
@@ -485,7 +577,11 @@ export default function WorkersPage() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem('user_info');
-      if (raw) setUserRole(JSON.parse(raw).role ?? 'ADMIN');
+      if (raw) {
+        const role = JSON.parse(raw).role ?? 'ADMIN';
+        userRoleRef.current = role;
+        setUserRole(role);
+      }
     } catch {}
     load();
     intervalRef.current = setInterval(load, 15000);
@@ -536,6 +632,17 @@ export default function WorkersPage() {
               </svg>
               Refresh
             </button>
+            {userRole === 'OWNER' && (
+              <button
+                onClick={() => setShowAddManager(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Manager
+              </button>
+            )}
             <button
               onClick={() => setShowAdd(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
@@ -555,7 +662,7 @@ export default function WorkersPage() {
         {/* Stats */}
         <div className="grid grid-cols-4 gap-4">
           {[
-            { label: 'Total Workers', value: workers.length, color: 'text-slate-900', bg: 'bg-slate-50', border: 'border-slate-200' },
+            { label: 'Total Staff', value: workers.length, color: 'text-slate-900', bg: 'bg-slate-50', border: 'border-slate-200' },
             { label: 'Active Accounts', value: activeWorkers.length, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
             { label: 'Scanning Now', value: activeCount, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', pulse: activeCount > 0 },
             { label: "Today's Scans", value: totalScans, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200' },
@@ -570,12 +677,28 @@ export default function WorkersPage() {
           ))}
         </div>
 
+        {/* Managers section — OWNER only */}
+        {userRole === 'OWNER' && (
+          <WorkerTable
+            title="Store Managers"
+            badge="Admin"
+            workers={managers}
+            stores={stores}
+            allowReassign={false}
+            togglingId={togglingId}
+            onEdit={setEditWorker}
+            onSetPin={setSetPinWorker}
+            onToggle={handleToggleActive}
+            onReassigned={load}
+          />
+        )}
+
         {/* Active Workers */}
         <WorkerTable
           title="Active Workers"
           workers={activeWorkers}
           stores={stores}
-          userRole={userRole}
+          allowReassign={userRole === 'OWNER'}
           togglingId={togglingId}
           onEdit={setEditWorker}
           onSetPin={setSetPinWorker}
@@ -589,7 +712,7 @@ export default function WorkersPage() {
             title="Deactivated"
             workers={inactiveWorkers}
             stores={stores}
-            userRole={userRole}
+            allowReassign={userRole === 'OWNER'}
             togglingId={togglingId}
             onEdit={setEditWorker}
             onSetPin={setSetPinWorker}
@@ -608,6 +731,18 @@ export default function WorkersPage() {
           onClose={() => setShowAdd(false)}
           onCreated={(creds) => {
             setShowAdd(false);
+            setPendingCredentials(creds);
+            load();
+          }}
+        />
+      )}
+
+      {showAddManager && (
+        <AddManagerModal
+          stores={stores}
+          onClose={() => setShowAddManager(false)}
+          onCreated={(creds) => {
+            setShowAddManager(false);
             setPendingCredentials(creds);
             load();
           }}

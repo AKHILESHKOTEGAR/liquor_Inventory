@@ -92,19 +92,66 @@ export async function auditRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({ session });
   });
 
-  // List sessions — scoped by store; STAFF sees their own store only
-  fastify.get('/sessions', async (request, reply) => {
+  // GET /api/audit/sessions/calendar?month=YYYY-MM&storeId=... — daily session summary for calendar view
+  fastify.get('/sessions/calendar', async (request, reply) => {
     const payload = request.user as JwtPayload;
-    const { status, storeId: requestedStore, page = '1', limit = '20' } = request.query as Record<string, string>;
+    const { month, storeId: requestedStore } = request.query as Record<string, string>;
 
     const accessibleStoreIds = getAccessibleStoreIds(payload, requestedStore);
     if (accessibleStoreIds.length === 0) {
       return reply.status(403).send({ error: 'No store access' });
     }
 
+    // Default to current month
+    const target = month ? new Date(`${month}-01`) : new Date();
+    const from = new Date(target.getFullYear(), target.getMonth(), 1);
+    const to = new Date(target.getFullYear(), target.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const sessions = await prisma.auditSession.findMany({
+      where: {
+        storeId: { in: accessibleStoreIds },
+        startedAt: { gte: from, lte: to },
+      },
+      include: {
+        user: { select: { employeeId: true, name: true } },
+        store: { select: { id: true, name: true } },
+        _count: { select: { scanLogs: true } },
+      },
+      orderBy: { startedAt: 'asc' },
+    });
+
+    // Group by date string YYYY-MM-DD
+    const byDate: Record<string, { sessionCount: number; totalScans: number; workers: string[]; statuses: string[] }> = {};
+    for (const s of sessions) {
+      const key = s.startedAt.toISOString().slice(0, 10);
+      if (!byDate[key]) byDate[key] = { sessionCount: 0, totalScans: 0, workers: [], statuses: [] };
+      byDate[key].sessionCount++;
+      byDate[key].totalScans += s._count.scanLogs;
+      if (!byDate[key].workers.includes(s.user.name)) byDate[key].workers.push(s.user.name);
+      if (!byDate[key].statuses.includes(s.status)) byDate[key].statuses.push(s.status);
+    }
+
+    return reply.send({ month: `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}`, days: byDate });
+  });
+
+  // List sessions — scoped by store; supports date range filtering
+  fastify.get('/sessions', async (request, reply) => {
+    const payload = request.user as JwtPayload;
+    const { status, storeId: requestedStore, page = '1', limit = '20', dateFrom, dateTo } = request.query as Record<string, string>;
+
+    const accessibleStoreIds = getAccessibleStoreIds(payload, requestedStore);
+    if (accessibleStoreIds.length === 0) {
+      return reply.status(403).send({ error: 'No store access' });
+    }
+
+    const dateFilter: { gte?: Date; lte?: Date } = {};
+    if (dateFrom) dateFilter.gte = new Date(`${dateFrom}T00:00:00.000Z`);
+    if (dateTo) dateFilter.lte = new Date(`${dateTo}T23:59:59.999Z`);
+
     const where = {
       storeId: { in: accessibleStoreIds },
       ...(status ? { status: status as SessionStatus } : {}),
+      ...(dateFrom || dateTo ? { startedAt: dateFilter } : {}),
     };
 
     const skip = (parseInt(page) - 1) * parseInt(limit);

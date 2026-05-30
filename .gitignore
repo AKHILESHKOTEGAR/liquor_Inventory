@@ -3,9 +3,11 @@ dist/
 .next/
 .turbo/
 *.env
+*.env.local
+*.env.*.local
 !.env.example
 uploads/
 coverage/
 .DS_Store
 *.log
-prisma/migrations/*.sql
+graphify-out/

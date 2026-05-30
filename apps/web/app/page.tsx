@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { login } from '@/lib/api';
 import Cookies from 'js-cookie';
 
@@ -22,8 +23,8 @@ export default function LoginPage() {
       setError('Employee ID must be in format EMP-0001');
       return;
     }
-    if (!/^\d{4}$/.test(pin)) {
-      setError('PIN must be exactly 4 digits');
+    if (!/^\d{4,6}$/.test(pin)) {
+      setError('PIN must be 4–6 digits');
       return;
     }
 
@@ -60,11 +61,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
-            <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-          </div>
+          <img src="/icon.png" alt="LiquorSafe" className="w-20 h-20 rounded-2xl mb-0 shadow-lg" />
           <h1 className="text-2xl font-bold text-white">LiquorSafe</h1>
           <p className="text-slate-400 text-sm mt-1">Admin Dashboard</p>
         </div>
@@ -94,13 +91,13 @@ export default function LoginPage() {
               <input
                 type="password"
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="••••"
                 inputMode="numeric"
                 autoComplete="current-password"
                 className="w-full bg-slate-700 border border-slate-600 text-white placeholder-slate-500 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tracking-widest"
               />
-              <p className="text-xs text-slate-500 mt-1">{pin.length}/4 digits</p>
+              <p className="text-xs text-slate-500 mt-1">{pin.length}/6 digits</p>
             </div>
 
             {error && (
@@ -120,7 +117,10 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-slate-500 text-xs mt-4">
-          Owner: EMP-0001 / 0000 &nbsp;·&nbsp; Admin: EMP-0011 / 1234
+          First time?{' '}
+          <Link href="/setup" className="text-slate-400 hover:text-white underline transition-colors">
+            Set up your account
+          </Link>
         </p>
       </div>
     </div>
