@@ -1,0 +1,26 @@
+{
+  "name": "liquor-inventory",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev --parallel",
+    "dev:api": "pnpm --filter @liquor/api dev",
+    "dev:web": "pnpm --filter @liquor/web dev",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "db:generate": "pnpm --filter @liquor/db run generate",
+    "db:push": "pnpm --filter @liquor/db run push",
+    "db:migrate": "pnpm --filter @liquor/db run migrate",
+    "db:seed": "pnpm --filter @liquor/db run seed",
+    "db:studio": "pnpm --filter @liquor/db run studio",
+    "db:reset": "pnpm --filter @liquor/db run reset"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.0",
+    "typescript": "^5.4.0",
+    "prettier": "^3.2.0",
+    "@types/node": "^20.12.0"
+  },
+  "packageManager": "pnpm@9.1.0"
+}

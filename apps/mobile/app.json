@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "LiquorSafe Scanner",
+    "slug": "liquorsafe-scanner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.liquorsafe.scanner",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Camera is used for scanning bottle QR codes and photographing damaged caps.",
+        "NSMicrophoneUsageDescription": "Not used"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f172a"
+      },
+      "package": "com.liquorsafe.scanner",
+      "permissions": [
+        "CAMERA",
+        "VIBRATE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow LiquorSafe to use your camera for scanning QR codes."
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}

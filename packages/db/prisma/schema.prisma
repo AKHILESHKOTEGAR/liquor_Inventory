@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  STAFF
+  ADMIN
+  OWNER
+}
+
+enum BottleSize {
+  ML_180
+  ML_375
+  ML_750
+}
+
+enum BottleStatus {
+  INWARDED
+  ON_SHELF
+  SOLD
+  DAMAGED_MANUAL
+  DAMAGED_PHOTO
+}
+
+enum SessionStatus {
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum ScanType {
+  QR_CODE
+  MANUAL_SERIAL
+  PHOTO_FALLBACK
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model Store {
+  id        String  @id @default(cuid())
+  name      String
+  address   String?
+  gstin     String?
+  licenseNo String?
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  storeOwners   StoreOwner[]
+  boxes         Box[]
+  auditSessions AuditSession[]
+
+  @@map("stores")
+}
+
+// Owner ↔ Store many-to-many
+model StoreOwner {
+  id      String @id @default(cuid())
+  userId  String
+  storeId String
+
+  user  User  @relation(fields: [userId], references: [id])
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@unique([userId, storeId])
+  @@map("store_owners")
+}
+
+model User {
+  id         String  @id @default(cuid())
+  employeeId String  @unique
+  name       String
+  pin        String
+  role       Role    @default(STAFF)
+  isActive   Boolean @default(true)
+
+  // STAFF and ADMIN belong to exactly one store.
+  // OWNER has no storeId — access is via StoreOwner join table.
+  storeId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store       Store?       @relation(fields: [storeId], references: [id])
+  storeOwners StoreOwner[]
+  sessions    AuditSession[]
+  scanLogs    ScanLog[]
+
+  @@index([storeId])
+  @@map("users")
+}
+
+model Brand {
+  id          String     @id @default(cuid())
+  name        String
+  size        BottleSize
+  costPrice   Decimal    @db.Decimal(10, 2)
+  retailPrice Decimal    @db.Decimal(10, 2)
+  imageRef    String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  boxes   Box[]
+  bottles Bottle[]
+
+  @@unique([name, size])
+  @@map("brands")
+}
+
+model Box {
+  id           String   @id @default(cuid())
+  virtualBoxId String   @unique @default(cuid())
+  boxBarcode   String
+  brandId      String
+  storeId      String
+  inwaredAt    DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  brand   Brand    @relation(fields: [brandId], references: [id])
+  store   Store    @relation(fields: [storeId], references: [id])
+  bottles Bottle[]
+
+  @@unique([boxBarcode, storeId])
+  @@index([brandId])
+  @@index([storeId])
+  @@map("boxes")
+}
+
+model Bottle {
+  id                  String       @id @default(cuid())
+  stateExciseQrString String       @unique
+  serialNumber        String?
+  photoRef            String?
+  boxId               String
+  brandId             String
+  status              BottleStatus @default(INWARDED)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  box      Box       @relation(fields: [boxId], references: [id])
+  brand    Brand     @relation(fields: [brandId], references: [id])
+  scanLogs ScanLog[]
+
+  @@index([boxId])
+  @@index([brandId])
+  @@index([status])
+  @@map("bottles")
+}
+
+model AuditSession {
+  id           String        @id @default(cuid())
+  sessionCode  String        @unique
+  status       SessionStatus @default(ACTIVE)
+  storeId      String
+  startedAt    DateTime      @default(now())
+  closedAt     DateTime?
+  createdBy    String
+  notes        String?
+  // Snapshot of expected stock at session start: { brandId: { name, size, count } }
+  snapshotData Json?
+  // Manager who reviewed & verified this session's results
+  verifiedBy   String?
+  surplusNotes String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  store    Store     @relation(fields: [storeId], references: [id])
+  user     User      @relation(fields: [createdBy], references: [id])
+  scanLogs ScanLog[]
+
+  @@index([status])
+  @@index([storeId])
+  @@index([createdBy])
+  @@map("audit_sessions")
+}
+
+model ScanLog {
+  id          String   @id @default(cuid())
+  sessionId   String
+  bottleId    String?
+  boxId       String?
+  scannedBy   String
+  scanType    ScanType
+  rawValue    String?
+  isDuplicate Boolean  @default(false)
+  scannedAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  session AuditSession @relation(fields: [sessionId], references: [id])
+  bottle  Bottle?      @relation(fields: [bottleId], references: [id])
+  user    User         @relation(fields: [scannedBy], references: [id])
+
+  @@index([sessionId])
+  @@index([bottleId])
+  @@index([scannedBy])
+  @@index([isDuplicate])
+  @@map("scan_logs")
+}
